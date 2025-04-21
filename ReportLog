@@ -1,0 +1,84 @@
+# Report
+# It is used to generate a report of the collected data. Run Powershell from the terminal.
+# T.z. 2025 - Ipekyol
+
+$logFile = "C:\OpenFileLogs\OpenFilesLog.csv"
+$reportFile = "C:\OpenFileLogs\OpenFiles_Daily_Report_$(Get-Date -Format 'yyyy-MM-dd').txt"
+
+if (!(Test-Path $logFile)) {
+    Write-Host "Log dosyası bulunamadı."
+    exit
+}
+
+$userFileMap = @{}     # Kullanıcı -> HashSet (dosyalar)
+$fileAccessCount = @{} # Dosya -> erişim sayısı
+$hourCounts = @{}      # Saat -> erişim sayısı
+
+Import-Csv $logFile | ForEach-Object {
+    $user = $_.User
+    $file = $_.File
+    $timestamp = Get-Date $_.Timestamp
+    $hour = $timestamp.ToString("HH:00")
+
+    # Saat bazlı erişim sayısı
+    if ($hourCounts.ContainsKey($hour)) {
+        $hourCounts[$hour]++
+    } else {
+        $hourCounts[$hour] = 1
+    }
+
+    # Kullanıcı -> Dosya eşlemesi
+    if (-not $userFileMap.ContainsKey($user)) {
+        $userFileMap[$user] = New-Object System.Collections.Generic.HashSet[string]
+    }
+    $userFileMap[$user].Add($file) | Out-Null
+
+    # Dosya bazlı eşsiz kullanıcı sayımı
+    if (-not $fileAccessCount.ContainsKey($file)) {
+        $fileAccessCount[$file] = New-Object System.Collections.Generic.HashSet[string]
+    }
+    $fileAccessCount[$file].Add($user) | Out-Null
+}
+
+# Yeni satırlar
+$lines = @()
+$lines += "GÜNLÜK OPEN FILE RAPORU - $(Get-Date -Format 'dd.MM.yyyy')"
+$lines += "==========================================================="
+$lines += ""
+$lines += " 1. Kullanıcı Bazlı Dosya Açma Sayıları:"
+$lines += "-----------------------------------------"
+
+foreach ($user in ($userFileMap.Keys | Sort-Object { $userFileMap[$_].Count } -Descending)) {
+    $lines += ("{0,-40} : {1} dosya" -f $user, $userFileMap[$user].Count)
+}
+
+$lines += ""
+$lines += " 2. En Çok Erişilen Dosyalar (eşsiz kullanıcı sayısı):"
+$lines += "--------------------------------------------------------"
+
+$topFiles = $fileAccessCount.GetEnumerator() | Sort-Object { $_.Value.Count } -Descending | Select-Object -First 10
+foreach ($fileEntry in $topFiles) {
+    $lines += ("{0,-60} : {1} erişim" -f $fileEntry.Key, $fileEntry.Value.Count)
+}
+
+$lines += ""
+$lines += " 3. Saat Bazlı Erişim Sayıları:"
+$lines += "-------------------------------"
+foreach ($hour in ($hourCounts.Keys | Sort-Object)) {
+    $lines += ("{0} : {1} erişim" -f $hour, $hourCounts[$hour])
+}
+
+$lines += ""
+$lines += " 4. Kullanıcıların Eriştiği Dosyalar:"
+$lines += "--------------------------------------"
+foreach ($user in ($userFileMap.Keys | Sort-Object)) {
+    $lines += ""
+    $lines += "$($user):"
+    $files = $userFileMap[$user] | Sort-Object
+    foreach ($file in $files) {
+        $lines += "    - $file"
+    }
+}
+
+# Raporu yaz
+$lines | Set-Content -Path $reportFile -Encoding UTF8
