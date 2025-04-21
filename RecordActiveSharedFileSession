@@ -1,0 +1,35 @@
+# Recording active sessions within the server
+# It is used to record the people who log in to the folders shared on the server. You can use it by running it as often as desired in windows tasks with Powershell. 
+# T.z. 2025 & Ipekyol
+
+$logFolder = "C:\OpenFileLogs"
+$logFile = "$logFolder\OpenFilesLog.csv"
+
+if (!(Test-Path $logFolder)) {
+    New-Item -ItemType Directory -Path $logFolder
+}
+
+if (!(Test-Path $logFile)) {
+    "Timestamp,User,File" | Out-File -FilePath $logFile -Encoding UTF8
+}
+
+# Önceki kayıtları hızlı karşılaştırma için HashSet gibi işle
+$existingSet = @{}
+
+Import-Csv $logFile | ForEach-Object {
+    $key = "$($_.User)|$($_.File)"
+    $existingSet[$key] = $true
+}
+
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+# Anlık açık dosyalar
+$currentOpenFiles = Get-SmbOpenFile | Select-Object @{n='User';e={$_.ClientUserName}}, @{n='File';e={$_.Path}}
+
+foreach ($entry in $currentOpenFiles) {
+    $key = "$($entry.User)|$($entry.File)"
+    if (-not $existingSet.ContainsKey($key)) {
+        "$timestamp,$($entry.User),""$($entry.File)""" | Out-File -FilePath $logFile -Append -Encoding UTF8
+        $existingSet[$key] = $true
+    }
+}
