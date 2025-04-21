@@ -1,0 +1,44 @@
+# It records the ip's of the users accessing the shared folders on the server, if any, it gets the dns names of the ip's from the dns server. You can use it by running it as often as desired in windows tasks with Powershell. 
+# T.z. 2025 - Ipekyol
+
+$logFolder = "C:\OpenFileLogs"
+$logFile = "$logFolder\SmbSessionsLog.csv"
+
+if (!(Test-Path $logFolder)) {
+    New-Item -ItemType Directory -Path $logFolder
+}
+
+if (!(Test-Path $logFile)) {
+    "Timestamp,ClientUserName,IPAddress,ResolvedHostName" | Out-File -FilePath $logFile -Encoding UTF8
+}
+
+# Hızlı karşılaştırma için önceki loglardan bir set oluştur
+$existingSet = @{}
+
+Import-Csv $logFile | ForEach-Object {
+    $key = "$($_.ClientUserName)|$($_.IPAddress)"
+    $existingSet[$key] = $true
+}
+
+# Anlık oturumları al
+$sessions = Get-SmbSession | Select-Object ClientUserName, ClientComputerName
+
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+foreach ($session in $sessions) {
+    $ip = $session.ClientComputerName
+    $username = $session.ClientUserName
+    $key = "$username|$ip"
+
+    if (-not $existingSet.ContainsKey($key)) {
+        # DNS çözümü
+        try {
+            $resolved = [System.Net.Dns]::GetHostEntry($ip).HostName
+        } catch {
+            $resolved = "N/A"
+        }
+
+        "$timestamp,$username,$ip,$resolved" | Out-File -FilePath $logFile -Append -Encoding UTF8
+        $existingSet[$key] = $true
+    }
+}
